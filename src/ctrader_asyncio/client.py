@@ -278,6 +278,13 @@ class CTraderClient:
                 dispatcher.register(payload_type, cb)
         self._dispatcher = dispatcher
 
+        # Start the receive loop immediately as a background task — auth
+        # sends requests via the dispatcher and awaits futures that can only
+        # be resolved when the receive loop is running to deliver responses.
+        receive_task = asyncio.create_task(
+            self._receive_loop(conn, dispatcher), name="ctrader-receive"
+        )
+
         try:
             # Step 1: app auth
             await authenticate_app(
@@ -302,10 +309,16 @@ class CTraderClient:
                 run_heartbeat(conn), name="ctrader-heartbeat"
             )
 
-            # Step 4: receive loop (runs until connection loss)
-            await self._receive_loop(conn, dispatcher)
+            # Step 4: wait for receive loop to exit (connection loss or cancel)
+            await receive_task
 
         except asyncio.CancelledError:
+            receive_task.cancel()
+            await asyncio.gather(receive_task, return_exceptions=True)
+            raise
+        except Exception:
+            receive_task.cancel()
+            await asyncio.gather(receive_task, return_exceptions=True)
             raise
         finally:
             self._ready.clear()
