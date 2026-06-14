@@ -155,12 +155,15 @@ class Connection:
         if self._writer is None:
             raise ConnectionLostError("Cannot send — connection is not open")
 
-        payload_type = _get_payload_type(message)
-        envelope = _ProtoMessage(
-            payloadType=payload_type,
-            payload=message.SerializeToString(),
-        )
-        frame = envelope.SerializeToString()
+        if isinstance(message, _ProtoMessage):
+            frame = message.SerializeToString()
+        else:
+            payload_type = _get_payload_type(message)
+            envelope = _ProtoMessage(
+                payloadType=payload_type,
+                payload=message.SerializeToString(),
+            )
+            frame = envelope.SerializeToString()
 
         if len(frame) > _MAX_FRAME_BYTES:
             raise ValueError(
